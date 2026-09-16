@@ -44,6 +44,18 @@ mock devuelve 3 tarjetas.
 ]
 ```
 
+### `POST http://localhost:5001/push-receipt`
+Simula al backend del emisor devolviendo el `pushReceiptID` que obtiene de HST
+(`GetPushReceipt`) para el alta con `executeProvisioning`. Genera un id nuevo en
+cada llamada y una expiración a +15 min. Sin `cardID` en el body responde `400`.
+
+```bash
+curl -X POST http://localhost:5001/push-receipt \
+  -H "Content-Type: application/json" \
+  -d '{"cardID":"card-visa-gold-001"}'
+# -> { "pushReceiptID": "a9f38269-...", "receiptExpirationTime": "2026-09-16T12:45:49.621-05:00" }
+```
+
 ### `POST http://localhost:5001/provision`
 Devuelve el `encCard` de una tarjeta concreta (caso: pedirlo al provisionar).
 Usa reglas por `cardID` del body; si no existe, responde `404`.

@@ -97,9 +97,35 @@ final class MockWalletEngine: WalletEngineProtocol {
     func startInAppProvisioning(card: WalletCard,
                                 from presenter: UIViewController,
                                 completion: @escaping (ProvisioningOutcome) -> Void) {
+        simulateProvisioning(
+            card: card,
+            message: "Modo mock (simulador): se agregará \(card.localizedDescription) sin pasar por Apple Pay real.",
+            from: presenter,
+            completion: completion
+        )
+    }
+
+    func startInAppProvisioning(card: WalletCard,
+                                pushReceiptID: String,
+                                from presenter: UIViewController,
+                                completion: @escaping (ProvisioningOutcome) -> Void) {
+        simulateProvisioning(
+            card: card,
+            message: "Modo mock (simulador): se agregará \(card.localizedDescription) con pushReceiptID \(pushReceiptID).",
+            from: presenter,
+            completion: completion
+        )
+    }
+
+    // MARK: - Auxiliares
+
+    private func simulateProvisioning(card: WalletCard,
+                                      message: String,
+                                      from presenter: UIViewController,
+                                      completion: @escaping (ProvisioningOutcome) -> Void) {
         let alert = UIAlertController(
             title: "Simular alta en Wallet",
-            message: "Modo mock (simulador): se agregará \(card.localizedDescription) sin pasar por Apple Pay real.",
+            message: message,
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "Cancelar", style: .cancel) { _ in
@@ -111,8 +137,6 @@ final class MockWalletEngine: WalletEngineProtocol {
         })
         presenter.present(alert, animated: true)
     }
-
-    // MARK: - Auxiliares
 
     private func provisionable() -> [WalletCard] {
         cards().filter { !$0.isProvisioned }

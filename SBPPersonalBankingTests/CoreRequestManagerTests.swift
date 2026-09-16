@@ -43,6 +43,24 @@ final class CoreRequestManagerTests: XCTestCase {
         XCTAssertEqual(dto.encCard, Self.encCardFixture)
     }
 
+    func testPushReceiptRequestSendsCardIDAndParsesReceipt() async throws {
+        StubURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/push-receipt")
+            XCTAssertEqual(request.httpMethod, "POST")
+            return (200, Self.pushReceiptJSON)
+        }
+
+        let request = PushReceiptRequest(cardID: "card-visa-001")
+        let body = try XCTUnwrap(request.body)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+        XCTAssertEqual(payload["cardID"], "card-visa-001")
+
+        let dto = try await makeManager().load(request)
+
+        XCTAssertEqual(dto.pushReceiptID, "1643ef957-622d-4137-abdf-fa605e81e72c")
+        XCTAssertEqual(dto.receiptExpirationTime, "2026-09-16T17:34:06.123Z")
+    }
+
     func testHTTPErrorIsThrown() async {
         StubURLProtocol.handler = { _ in (500, Data("{}".utf8)) }
         do {
@@ -54,6 +72,13 @@ final class CoreRequestManagerTests: XCTestCase {
     }
 
     // MARK: - JSON de prueba
+
+    private static let pushReceiptJSON = Data("""
+    {
+      "pushReceiptID": "1643ef957-622d-4137-abdf-fa605e81e72c",
+      "receiptExpirationTime": "2026-09-16T17:34:06.123Z"
+    }
+    """.utf8)
 
     private static let cardsJSON = Data("""
     [

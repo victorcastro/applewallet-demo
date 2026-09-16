@@ -1,4 +1,3 @@
-# Xcode / build artifacts
 build_dd/
 DerivedData/
 build/
@@ -7,3 +6,4 @@ build/
 xcuserdata/
 *.xcuserstate
 mocks/HSTDemo_InAppProvisioningExtension/
+Frameworks/*.xcframework/ios-*/

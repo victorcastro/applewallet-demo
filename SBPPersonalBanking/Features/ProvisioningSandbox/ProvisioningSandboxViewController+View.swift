@@ -22,6 +22,8 @@ extension ProvisioningSandboxViewController {
             case checkAvailability
             case checkProvisioned
             case addInApp
+            case requestPushReceipt
+            case addInAppWithPushReceipt
             // Wallet (extensión)
             case status
             case passEntries
@@ -86,6 +88,18 @@ extension ProvisioningSandboxViewController {
             }
         }
 
+        /// Origen de los datos de la tarjeta en el alta in-app (opciones de HST).
+        private enum ProvisioningMethod: Int, CaseIterable {
+            case encCard, pushReceipt
+
+            var title: String {
+                switch self {
+                case .encCard:     return "encCard"
+                case .pushReceipt: return "pushReceiptID"
+                }
+            }
+        }
+
         // MARK: - API pública
 
         let actions = PassthroughSubject<Action, Never>()
@@ -103,11 +117,23 @@ extension ProvisioningSandboxViewController {
             Section(title: "Tarjeta", showsCardSelector: true, items: [
                 ActionItem(title: "2. CardIsProvisioned()",
                            description: "Valida si la tarjeta seleccionada ya está digitalizada en Wallet. Si ya tiene un pase activo, no puede volver a añadirse.",
-                           action: .checkProvisioned),
-                ActionItem(title: "3. StartInAppProvisioning()",
-                           description: "Presenta la hoja nativa de Apple Pay para digitalizar la tarjeta seleccionada en Wallet.",
-                           action: .addInApp)
+                           action: .checkProvisioned)
             ])
+        ]
+
+        private let encCardItems: [ActionItem] = [
+            ActionItem(title: "3. ExecuteProvisioningOfEncryptedCard()",
+                       description: "Presenta la hoja de Apple Pay usando el encCard guardado de la tarjeta.",
+                       action: .addInApp)
+        ]
+
+        private let pushReceiptItems: [ActionItem] = [
+            ActionItem(title: "3. RequestPushReceipt()",
+                       description: "Pide al backend un pushReceiptID para la tarjeta. Caduca en 15 min.",
+                       action: .requestPushReceipt),
+            ActionItem(title: "4. ExecuteProvisioning()",
+                       description: "Presenta la hoja de Apple Pay canjeando el pushReceiptID vigente.",
+                       action: .addInAppWithPushReceipt)
         ]
 
         private let walletItems: [ActionItem] = [
@@ -128,6 +154,9 @@ extension ProvisioningSandboxViewController {
         // MARK: - Vistas
 
         private let segmentedControl = UISegmentedControl(items: Segment.allCases.map(\.title))
+        private let methodControl = UISegmentedControl(items: ProvisioningMethod.allCases.map(\.title))
+        private let encCardStack = UIStackView()
+        private let pushReceiptStack = UIStackView()
         private let inAppStack = UIStackView()
         private let walletStack = UIStackView()
         private let cardSelectorButton = UIButton(type: .system)
@@ -197,6 +226,12 @@ extension ProvisioningSandboxViewController {
             walletStack.isHidden = segment != .wallet
         }
 
+        private func updateVisibleMethod() {
+            let method = ProvisioningMethod(rawValue: methodControl.selectedSegmentIndex) ?? .encCard
+            encCardStack.isHidden = method != .encCard
+            pushReceiptStack.isHidden = method != .pushReceipt
+        }
+
         // MARK: - Layout
 
         private func configureUI() {
@@ -211,6 +246,7 @@ extension ProvisioningSandboxViewController {
             inAppStack.axis = .vertical
             inAppStack.spacing = 16
             inAppSections.map(makeSection).forEach(inAppStack.addArrangedSubview)
+            inAppStack.addArrangedSubview(makeProvisioningSection())
 
             configureActionStack(walletStack, items: walletItems)
 
@@ -219,16 +255,30 @@ extension ProvisioningSandboxViewController {
             topStack.spacing = 16
             topStack.translatesAutoresizingMaskIntoConstraints = false
 
-            addSubview(topStack)
+            // Las acciones hacen scroll y la consola conserva una altura fija: con
+            // más pasos en pantalla el log no debe quedar aplastado.
+            let actionsScrollView = UIScrollView()
+            actionsScrollView.alwaysBounceVertical = true
+            actionsScrollView.translatesAutoresizingMaskIntoConstraints = false
+            actionsScrollView.addSubview(topStack)
+
+            addSubview(actionsScrollView)
             addSubview(logContainerView)
             configureLogContainer()
 
             NSLayoutConstraint.activate([
-                topStack.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 16),
-                topStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-                topStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+                actionsScrollView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+                actionsScrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                actionsScrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                actionsScrollView.bottomAnchor.constraint(equalTo: logContainerView.topAnchor, constant: -8),
 
-                logContainerView.topAnchor.constraint(equalTo: topStack.bottomAnchor, constant: 16),
+                topStack.topAnchor.constraint(equalTo: actionsScrollView.contentLayoutGuide.topAnchor, constant: 16),
+                topStack.leadingAnchor.constraint(equalTo: actionsScrollView.contentLayoutGuide.leadingAnchor, constant: 16),
+                topStack.trailingAnchor.constraint(equalTo: actionsScrollView.contentLayoutGuide.trailingAnchor, constant: -16),
+                topStack.bottomAnchor.constraint(equalTo: actionsScrollView.contentLayoutGuide.bottomAnchor, constant: -8),
+                topStack.widthAnchor.constraint(equalTo: actionsScrollView.widthAnchor, constant: -32),
+
+                logContainerView.heightAnchor.constraint(equalTo: safeAreaLayoutGuide.heightAnchor, multiplier: 0.3),
                 logContainerView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
                 logContainerView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
                 logContainerView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -16)
@@ -391,6 +441,26 @@ extension ProvisioningSandboxViewController {
                 stack.addArrangedSubview(makeCardSelector())
             }
             section.items.map(makeCard).forEach(stack.addArrangedSubview)
+            return stack
+        }
+
+        /// Sección "Alta": el segmentado elige qué método del SDK se ejerce.
+        private func makeProvisioningSection() -> UIView {
+            methodControl.selectedSegmentIndex = ProvisioningMethod.encCard.rawValue
+            methodControl.addAction(
+                UIAction { [weak self] _ in self?.updateVisibleMethod() },
+                for: .valueChanged
+            )
+
+            configureActionStack(encCardStack, items: encCardItems)
+            configureActionStack(pushReceiptStack, items: pushReceiptItems)
+            updateVisibleMethod()
+
+            let stack = UIStackView(arrangedSubviews: [
+                makeSectionHeader("Alta"), methodControl, encCardStack, pushReceiptStack
+            ])
+            stack.axis = .vertical
+            stack.spacing = 8
             return stack
         }
 

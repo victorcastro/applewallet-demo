@@ -5,9 +5,9 @@
 //  Banco de pruebas del provisioning que ejerce cada paso de forma aislada, sin
 //  depender de un flujo real de Apple/HST. Un segmentado separa los DOS caminos:
 //
-//    • In-app  → alta iniciada desde la propia app (el botón "Añadir a Wallet"),
-//                dividida en tres pasos: disponibilidad del dispositivo, estado
-//                de la tarjeta y presentación del sheet de Apple Pay.
+//    • In-app  → alta iniciada desde la propia app (el botón "Añadir a Wallet"):
+//                disponibilidad del dispositivo, estado de la tarjeta y alta con
+//                `encCard` (opción C de HST) o con `pushReceiptID` (opciones A/B).
 //    • Wallet  → lo que Apple Wallet le pide a la extensión issuer-provisioning
 //                (`status` / `passEntries` / autorización / `generate…`).
 //
@@ -30,6 +30,8 @@ final class ProvisioningSandboxViewController: UIViewController {
     private var cancellables = Set<AnyCancellable>()
     private var cards: [WalletCard] = []
     private var selectedCardID: String?
+    /// Id vigente para `ExecuteProvisioning()`. Se descarta al cambiar de tarjeta o tras usarlo.
+    private var pushReceipt: WalletProvisioningManager.PushReceipt?
 
     private var selectedCard: WalletCard? {
         cards.first { $0.cardID == selectedCardID }
@@ -78,6 +80,8 @@ private extension ProvisioningSandboxViewController {
         case .checkAvailability:  runCheckAvailability()
         case .checkProvisioned:   runCheckProvisioned()
         case .addInApp:           runAddInApp()
+        case .requestPushReceipt: runRequestPushReceipt()
+        case .addInAppWithPushReceipt: runAddInAppWithPushReceipt()
         case .status:            runStatus()
         case .passEntries:       runPassEntries()
         case .authorize:         runAuthorize()
@@ -131,6 +135,55 @@ private extension ProvisioningSandboxViewController {
 
         log("startInAppProvisioning… cardID = \(card.cardID)")
         walletManager.startProvisioning(for: card, from: self) { [weak self] outcome in
+            DispatchQueue.main.async {
+                self?.logOutcome(outcome, card: card)
+                self?.reloadCards()
+            }
+        }
+    }
+
+    /// Pide al backend un `pushReceiptID` para la tarjeta seleccionada (opciones A/B
+    /// de HST). Solo lo guarda: el alta se lanza aparte para aislar fallos de red
+    /// de fallos del SDK.
+    func runRequestPushReceipt() {
+        guard let card = selectedCard else {
+            log("Selecciona una tarjeta primero.", level: .error)
+            return
+        }
+
+        log("requestPushReceipt… cardID = \(card.cardID)")
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let receipt = try await walletManager.requestPushReceipt(for: card)
+                pushReceipt = receipt
+                log("pushReceiptID = \(receipt.id)\nexpira = \(receipt.expiresAt.formatted(date: .omitted, time: .standard))",
+                    level: .success)
+            } catch {
+                log("❌ No se obtuvo pushReceiptID: \(error.localizedDescription)", level: .error)
+            }
+        }
+    }
+
+    /// Lanza el alta In-app canjeando el `pushReceiptID` vigente. Cada id sirve
+    /// para un único intento, así que se descarta al usarlo.
+    func runAddInAppWithPushReceipt() {
+        guard let card = selectedCard else {
+            log("Selecciona una tarjeta primero.", level: .error)
+            return
+        }
+        guard let receipt = pushReceipt, receipt.cardID == card.cardID else {
+            log("Pide primero un pushReceiptID para esta tarjeta (paso 3).", level: .error)
+            return
+        }
+        pushReceipt = nil
+        guard !receipt.isExpired else {
+            log("El pushReceiptID caducó. Pide uno nuevo (paso 3).", level: .error)
+            return
+        }
+
+        log("executeProvisioning… pushReceiptID = \(receipt.id)")
+        walletManager.startProvisioning(for: card, pushReceiptID: receipt.id, from: self) { [weak self] outcome in
             DispatchQueue.main.async {
                 self?.logOutcome(outcome, card: card)
                 self?.reloadCards()
@@ -267,6 +320,9 @@ private extension ProvisioningSandboxViewController {
     }
 
     func selectCard(_ id: String) {
+        if id != selectedCardID {
+            pushReceipt = nil
+        }
         selectedCardID = id
         refreshCardSelector()
         if let card = selectedCard {

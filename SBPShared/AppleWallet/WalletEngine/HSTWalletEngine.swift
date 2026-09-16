@@ -112,6 +112,42 @@ final class HSTWalletEngine: WalletEngineProtocol {
     func startInAppProvisioning(card: WalletCard,
                                 from presenter: UIViewController,
                                 completion: @escaping (ProvisioningOutcome) -> Void) {
+        runProvisioning(completion: completion) { hp2, events in
+            try hp2.executeProvisioningOfEncryptedCard(
+                parentViewController: presenter,
+                cardholderName: card.cardHolderName,
+                panLastFour: card.lastFourDigits,
+                cardDescr: card.localizedDescription,
+                panId: card.cardID,  // PAN Reference ID de `getCards()`; "" si la tarjeta no está en ningún dispositivo (demo: cardID)
+                pnp: card.paymentNetwork.lowercased(),
+                encCard: card.encCard,
+                events: events
+            )
+        }
+    }
+
+    func startInAppProvisioning(card: WalletCard,
+                                pushReceiptID: String,
+                                from presenter: UIViewController,
+                                completion: @escaping (ProvisioningOutcome) -> Void) {
+        runProvisioning(completion: completion) { hp2, events in
+            try hp2.executeProvisioning(
+                parentViewController: presenter,
+                cardholderName: card.cardHolderName,
+                panLastFour: card.lastFourDigits,
+                cardDescr: card.localizedDescription,
+                panId: card.cardID,  // PAN Reference ID de `getCards()`; "" si la tarjeta no está en ningún dispositivo (demo: cardID)
+                pnp: card.paymentNetwork.lowercased(),
+                pushRecId: pushReceiptID,
+                events: events
+            )
+        }
+    }
+
+    /// Parte común de ambas altas: elegibilidad, retención de los eventos del SDK
+    /// mientras dura el alta y mapeo de la excepción síncrona a `.failed`.
+    private func runProvisioning(completion: @escaping (ProvisioningOutcome) -> Void,
+                                 execute: (HP2, WalletCommEvents) throws -> Void) {
         guard PKAddPaymentPassViewController.canAddPaymentPass() else {
             completion(.unsupported)
             return
@@ -126,16 +162,7 @@ final class HSTWalletEngine: WalletEngineProtocol {
         self.events = events
 
         do {
-            try hp2.executeProvisioningOfEncryptedCard(
-                parentViewController: presenter,
-                cardholderName: card.cardHolderName,
-                panLastFour: card.lastFourDigits,
-                cardDescr: card.localizedDescription,
-                panId: card.cardID,
-                pnp: card.paymentNetwork,
-                encCard: card.encCard,
-                events: events
-            )
+            try execute(hp2, events)
         } catch {
             self.events = nil
             completion(.failed(error))

@@ -47,7 +47,16 @@ public protocol WalletEngineProtocol {
                                completion: @escaping (PKAddPaymentPassRequest?) -> Void)
 
     // MARK: Alta in-app (presenta el sheet de Apple Pay o lo simula)
+    /// Opción C de HST: los datos de la tarjeta viajan cifrados en `card.encCard`.
     func startInAppProvisioning(card: WalletCard,
+                                from presenter: UIViewController,
+                                completion: @escaping (ProvisioningOutcome) -> Void)
+
+    /// Opciones A/B de HST: el backend del emisor obtiene `pushReceiptID` de HST
+    /// (`GetPushReceipt`) y el SDK lo canjea por los datos de la tarjeta. El id
+    /// caduca a los 15 min: pedirlo justo antes del alta, nunca guardarlo.
+    func startInAppProvisioning(card: WalletCard,
+                                pushReceiptID: String,
                                 from presenter: UIViewController,
                                 completion: @escaping (ProvisioningOutcome) -> Void)
 }

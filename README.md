@@ -147,6 +147,26 @@ El usuario pulsa "Añadir a Wallet" sobre una tarjeta de la lista.
 4. El resultado vuelve como `ProvisioningOutcome`
    (`added` / `cancelled` / `failed` / `unsupported`) y la UI refresca el estado.
 
+#### Variante — In-app con `pushReceiptID` (HST opciones A/B)
+
+HST ofrece un segundo método de alta: en vez del `encCard`, el SDK recibe un
+`pushReceiptID` y obtiene los datos de la tarjeta desde el backend de HST. HST marca
+estas opciones como *deprecated* (doc v1.9 / v1.14): confirmar con HST que la
+institución las tiene habilitadas antes de usarlas.
+
+1. **Backend del emisor → HST:** `GetPushReceipt` (`/api/v3/getpushreceipt`, TLS
+   mutuo). Nunca desde la app. El id **caduca a los 15 min**.
+2. **App → backend:** `WalletProvisioningManager.requestPushReceipt(for:)` hace
+   `POST /push-receipt` (Mockoon) y devuelve `pushReceiptID` + expiración.
+3. **→ HST:** `WalletProvisioningManager.startProvisioning(for:pushReceiptID:from:)`
+   delega en el engine (`startInAppProvisioning(card:pushReceiptID:)`), que llama
+   `hp2.executeProvisioning(... pushRecId:)`. Mismo sheet de Apple Pay y mismo
+   `ProvisioningOutcome` que el flujo con `encCard`.
+
+La red vive en la app y no en el engine: `SBPShared` también corre en las
+extensiones y no depende de `SBPCorePersonalBanking`. La extensión de Wallet sigue
+usando `encCard`.
+
 ### Flujo B — Wallet (desde la app Wallet, vía extensión)
 
 Aquí quien conduce es **Wallet**, que llama a la extensión non-UI
@@ -209,9 +229,11 @@ Todos los consumidores (`WalletCardRepository`, `WalletProvisioningManager`,
 
 `SBPPersonalBanking/Features/ProvisioningSandbox/ProvisioningSandboxViewController`
 ejercita cada paso de los dos flujos de forma aislada, con un segmentado que separa
-**In-app** (disponibilidad del dispositivo / estado de la tarjeta / sheet de Apple
-Pay) y **Wallet** (`status` / `passEntries` / auth / `generateAddPaymentPassRequest`),
-sin pasar por Wallet. Todo pasa por `WalletEngineProvider.current`, así que funciona
+**In-app** (disponibilidad del dispositivo / estado de la tarjeta / alta) y **Wallet**
+(`status` / `passEntries` / auth / `generateAddPaymentPassRequest`), sin pasar por
+Wallet. En In-app, la sección **Alta** elige el método: `encCard`
+(`ExecuteProvisioningOfEncryptedCard()`) o `pushReceiptID` (`RequestPushReceipt()` y
+luego `ExecuteProvisioning()`; el id se descarta al usarlo o al cambiar de tarjeta). Todo pasa por `WalletEngineProvider.current`, así que funciona
 en simulador.
 
 ## Pendiente para producción

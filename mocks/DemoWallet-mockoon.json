@@ -192,6 +192,64 @@
       "responseMode": null,
       "streamingMode": null,
       "streamingInterval": 0
+    },
+    {
+      "uuid": "097b2bb4-57ae-48a9-8c5f-d51bd4c33f7e",
+      "type": "http",
+      "documentation": "Simula al backend del emisor devolviendo el pushReceiptID que obtiene de HST (GetPushReceipt). Vigencia 15 min.",
+      "method": "post",
+      "endpoint": "push-receipt",
+      "responses": [
+        {
+          "uuid": "0c1c41af-4cc0-4689-a2b1-4a1f3b89ee26",
+          "body": "{\n  \"pushReceiptID\": \"{{faker 'string.uuid'}}\",\n  \"receiptExpirationTime\": \"{{dateTimeShift minutes=15 format=\"yyyy-MM-dd'T'HH:mm:ss.SSSXXX\"}}\"\n}",
+          "latency": 0,
+          "statusCode": 200,
+          "label": "cardID presente",
+          "headers": [],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [
+            {
+              "target": "body",
+              "modifier": "cardID",
+              "value": ".+",
+              "invert": false,
+              "operator": "regex"
+            }
+          ],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": false,
+          "crudKey": "id",
+          "callbacks": []
+        },
+        {
+          "uuid": "b94d8cc7-d317-4f64-9311-58550decf927",
+          "body": "{\n  \"error\": \"cardID requerido\"\n}",
+          "latency": 0,
+          "statusCode": 400,
+          "label": "default failure",
+          "headers": [],
+          "bodyType": "INLINE",
+          "filePath": "",
+          "databucketID": "",
+          "sendFileAsBody": false,
+          "rules": [],
+          "rulesOperator": "OR",
+          "disableTemplating": false,
+          "fallbackTo404": false,
+          "default": true,
+          "crudKey": "id",
+          "callbacks": []
+        }
+      ],
+      "responseMode": null,
+      "streamingMode": null,
+      "streamingInterval": 0
     }
   ],
   "rootChildren": [
@@ -202,6 +260,10 @@
     {
       "type": "route",
       "uuid": "76d640ff-0821-43dc-b1f8-09f8215b0535"
+    },
+    {
+      "type": "route",
+      "uuid": "097b2bb4-57ae-48a9-8c5f-d51bd4c33f7e"
     }
   ],
   "proxyMode": false,
